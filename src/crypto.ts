@@ -1,23 +1,70 @@
 import nacl from "tweetnacl";
 import util from "tweetnacl-util";
-import * as Crypto from "expo-crypto";
 import { setSecureItem, getSecureItem, removeSecureItem } from "./secureKeyVault";
 
-// Bind TweetNaCl's PRNG directly to the OS Cryptographically Secure PRNG (CSPRNG)
-// Never uses Math.random().
+export type RandomBytesProvider = (target: Uint8Array) => Uint8Array;
+
+let csprngBound = false;
+let customRandomProvider: RandomBytesProvider | null = null;
+
+/**
+ * Binds a custom OS CSPRNG provider (e.g. `expo-crypto`'s `getRandomValues` on React Native).
+ */
+export function configureCSPRNG(provider: RandomBytesProvider): void {
+  customRandomProvider = provider;
+  csprngBound = false;
+  ensureCSPRNG();
+}
+
+/**
+ * Ensures TweetNaCl's PRNG is bound to an OS-backed CSPRNG (`expo-crypto` or WebCrypto `crypto.getRandomValues`).
+ * Fails closed (throws an error) if no cryptographic entropy source is available — NEVER falls back to `Math.random()`.
+ */
+export function ensureCSPRNG(): void {
+  if (csprngBound) return;
+
+  if (customRandomProvider) {
+    const provider = customRandomProvider;
+    nacl.setPRNG((x: Uint8Array, n: number) => {
+      const bytes = provider(new Uint8Array(n));
+      for (let i = 0; i < n; i++) x[i] = bytes[i];
+    });
+    csprngBound = true;
+    return;
+  }
+
+  const webCrypto = typeof globalThis !== "undefined" ? (globalThis as unknown as { crypto?: Crypto }).crypto : undefined;
+  if (webCrypto && typeof webCrypto.getRandomValues === "function") {
+    nacl.setPRNG((x: Uint8Array, n: number) => {
+      const bytes = webCrypto.getRandomValues(new Uint8Array(n));
+      for (let i = 0; i < n; i++) x[i] = bytes[i];
+    });
+    csprngBound = true;
+    return;
+  }
+
+  throw new Error(
+    "CRITICAL: No OS CSPRNG available. Call configureCSPRNG(Crypto.getRandomValues) on React Native before cryptographic operations."
+  );
+}
+
+// Attempt automatic WebCrypto / global CSPRNG binding at module load when available
 try {
-  nacl.setPRNG((x: Uint8Array, n: number) => {
-    const bytes = Crypto.getRandomValues(new Uint8Array(n));
-    for (let i = 0; i < n; i++) {
-      x[i] = bytes[i];
-    }
-  });
+  ensureCSPRNG();
 } catch {}
+
+/**
+ * Generates `length` cryptographically secure random bytes via the bound OS CSPRNG.
+ */
+export function randomBytesCSPRNG(length: number): Uint8Array {
+  ensureCSPRNG();
+  return nacl.randomBytes(length);
+}
 
 const PRIVATE_KEY_STORAGE = "@zypher_private_key";
 const memoryPrivateKeyCache = new Map<string, string>();
 
-export const clearMemoryKeyCache = () => {
+export const clearMemoryKeyCache = (): void => {
   memoryPrivateKeyCache.clear();
 };
 
@@ -26,20 +73,12 @@ export const clearMemoryKeyCache = () => {
  * Returns { publicKey, secretKey } encoded in Base64.
  */
 export const generateKeyPair = (): { publicKey: string; secretKey: string } => {
-  try {
-    const keyPair = nacl.box.keyPair();
-    return {
-      publicKey: util.encodeBase64(keyPair.publicKey),
-      secretKey: util.encodeBase64(keyPair.secretKey),
-    };
-  } catch {
-    const secretKey = Crypto.getRandomValues(new Uint8Array(32));
-    const keyPair = nacl.box.keyPair.fromSecretKey(secretKey);
-    return {
-      publicKey: util.encodeBase64(keyPair.publicKey),
-      secretKey: util.encodeBase64(keyPair.secretKey),
-    };
-  }
+  ensureCSPRNG();
+  const keyPair = nacl.box.keyPair();
+  return {
+    publicKey: util.encodeBase64(keyPair.publicKey),
+    secretKey: util.encodeBase64(keyPair.secretKey),
+  };
 };
 
 /**
@@ -92,13 +131,14 @@ export const clearPrivateKey = async (uid: string): Promise<void> => {
 
 /**
  * Encrypts a 1-on-1 message using X25519 + XSalsa20-Poly1305 authenticated encryption (`nacl.box`).
- * Generates a fresh 24-byte CSPRNG nonce for every message.
+ * Note: Static `nacl.box` does not provide per-message forward secrecy; use `DoubleRatchet` (`dr:`) for sessions.
  */
 export const encryptMessage = (
   message: string,
   recipientPublicKeyBase64: string,
   senderSecretKeyBase64: string
 ): string => {
+  ensureCSPRNG();
   const nonce = nacl.randomBytes(nacl.box.nonceLength);
   const messageUint8 = util.decodeUTF8(message);
 
@@ -154,6 +194,7 @@ export const decryptMessage = (
  * Generates a 256-bit symmetric group key encoded in Base64.
  */
 export const generateGroupKey = (): string => {
+  ensureCSPRNG();
   const key = nacl.randomBytes(nacl.secretbox.keyLength);
   return util.encodeBase64(key);
 };
@@ -162,6 +203,7 @@ export const generateGroupKey = (): string => {
  * Encrypts a group message using XSalsa20-Poly1305 (`nacl.secretbox`) with a fresh 24-byte CSPRNG nonce.
  */
 export const encryptGroupMessage = (message: string, groupKeyBase64: string): string => {
+  ensureCSPRNG();
   const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
   const messageUint8 = util.decodeUTF8(message);
   const groupKey = util.decodeBase64(groupKeyBase64);

@@ -1,67 +1,66 @@
-import { Platform } from "react-native";
-import * as SecureStore from "expo-secure-store";
-
-/**
- * Sanitizes key identifiers for Android KeyStore & iOS Keychain compatibility.
- */
-function sanitizeKey(key: string): string {
-  return key.replace(/[^a-zA-Z0-9._-]/g, "_");
+export interface SecureVaultAdapter {
+  setItem(key: string, value: string): Promise<void>;
+  getItem(key: string): Promise<string | null>;
+  deleteItem(key: string): Promise<void>;
 }
 
+function sanitizeSecureStoreKey(rawKey: string): string {
+  return rawKey.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+let activeVaultAdapter: SecureVaultAdapter | null = null;
+
 /**
- * Checks whether hardware-backed SecureStore (Android KeyStore / iOS Secure Enclave Keychain)
- * is available on the current device runtime.
+ * Configures a custom hardware keystore adapter (e.g., Expo SecureStore on iOS/Android,
+ * or an isolated in-memory vault during automated test suites).
  */
-export async function isHardwareSecureStorageAvailable(): Promise<boolean> {
-  if (Platform.OS === "web") return false;
+export function configureSecureVault(adapter: SecureVaultAdapter): void {
+  activeVaultAdapter = adapter;
+}
+
+async function resolveDefaultExpoSecureVault(): Promise<SecureVaultAdapter> {
+  if (activeVaultAdapter) return activeVaultAdapter;
   try {
-    return await SecureStore.isAvailableAsync();
+    // Dynamic import of optional Expo SecureStore peer dependency
+    const moduleName = "expo-secure-store";
+    const SecureStore = await import(moduleName);
+    activeVaultAdapter = {
+      async setItem(key: string, value: string): Promise<void> {
+        await SecureStore.setItemAsync(sanitizeSecureStoreKey(key), value, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+      },
+      async getItem(key: string): Promise<string | null> {
+        return await SecureStore.getItemAsync(sanitizeSecureStoreKey(key));
+      },
+      async deleteItem(key: string): Promise<void> {
+        await SecureStore.deleteItemAsync(sanitizeSecureStoreKey(key));
+      },
+    };
+    return activeVaultAdapter;
   } catch {
-    return false;
+    throw new Error(
+      "Hardware KeyStore (expo-secure-store) is not available in this runtime. " +
+        "On non-Expo runtimes or tests, inject a vault explicitly via configureSecureVault()."
+    );
   }
 }
 
 /**
- * Stores sensitive cryptographic key material strictly inside hardware-backed device storage
- * (`WHEN_UNLOCKED_THIS_DEVICE_ONLY` — non-migratable, never backed up to cloud).
+ * Stores sensitive cryptographic material in hardware-backed Android KeyStore / iOS Keychain
+ * with `WHEN_UNLOCKED_THIS_DEVICE_ONLY` (excluded from cloud backups and device migrations).
  */
 export async function setSecureItem(key: string, value: string): Promise<void> {
-  if (Platform.OS === "web") {
-    throw new Error("Hardware SecureStore is required for private key storage.");
-  }
-  const isAvailable = await SecureStore.isAvailableAsync();
-  if (!isAvailable) {
-    throw new Error("Device hardware keystore is unavailable.");
-  }
-  await SecureStore.setItemAsync(sanitizeKey(key), value, {
-    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-  });
+  const vault = await resolveDefaultExpoSecureVault();
+  await vault.setItem(key, value);
 }
 
-/**
- * Reads sensitive cryptographic key material from Android KeyStore / iOS Keychain.
- */
 export async function getSecureItem(key: string): Promise<string | null> {
-  if (Platform.OS === "web") return null;
-  try {
-    const isAvailable = await SecureStore.isAvailableAsync();
-    if (!isAvailable) return null;
-    const val = await SecureStore.getItemAsync(sanitizeKey(key));
-    return val && val.length > 0 ? val : null;
-  } catch {
-    return null;
-  }
+  const vault = await resolveDefaultExpoSecureVault();
+  return await vault.getItem(key);
 }
 
-/**
- * Permanently erases a cryptographic key from hardware-backed storage.
- */
 export async function removeSecureItem(key: string): Promise<void> {
-  if (Platform.OS === "web") return;
-  try {
-    const isAvailable = await SecureStore.isAvailableAsync();
-    if (isAvailable) {
-      await SecureStore.deleteItemAsync(sanitizeKey(key));
-    }
-  } catch {}
+  const vault = await resolveDefaultExpoSecureVault();
+  await vault.deleteItem(key);
 }

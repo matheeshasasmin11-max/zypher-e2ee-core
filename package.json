@@ -1,25 +1,39 @@
 {
   "name": "@zypherchats/e2ee-core",
-  "version": "1.0.0",
-  "description": "Open-source End-to-End Encryption (Double Ratchet + Curve25519 + XSalsa20-Poly1305) cryptographic engine for ZypherChats.",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "version": "1.1.0",
+  "description": "Open-source End-to-End Encryption engine (X3DH + Double Ratchet v2 + RFC 5869 HKDF-SHA512 + XSalsa20-Poly1305) for ZypherChats.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/matheeshasasmin11-max/zypher-e2ee-core.git"
   },
   "scripts": {
-    "test": "node tests/verify-e2ee.mjs"
+    "build": "tsc",
+    "test": "npm run build && node tests/verify-e2ee.mjs"
   },
   "dependencies": {
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
   },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
   "peerDependencies": {
     "@react-native-async-storage/async-storage": ">=1.18.0",
     "expo-crypto": ">=13.0.0",
-    "expo-secure-store": ">=13.0.0",
-    "react-native": ">=0.72.0"
+    "expo-secure-store": ">=13.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    },
+    "expo-crypto": {
+      "optional": true
+    },
+    "expo-secure-store": {
+      "optional": true
+    }
   }
 }
