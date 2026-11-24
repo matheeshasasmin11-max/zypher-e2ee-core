@@ -30,17 +30,17 @@ This repository publishes ZypherChats's client-side cryptographic engine so secu
 
 ```mermaid
 sequenceDiagram
-    participant Alice as Alice's Device (Hardware KeyStore)
+    participant Alice as Alice Device (Hardware KeyStore)
     participant Directory as Public Key & PreKey Directory
-    participant Bob as Bob's Device (Hardware KeyStore)
+    participant Bob as Bob Device (Hardware KeyStore)
 
-    Bob->>Directory: Publishes IK_sign (Ed25519), IK_dh (X25519),<br/>SignedPreKey + Signature, OneTimePreKeys
-    Alice->>Directory: Fetches Bob's PreKeyBundle
-    Note over Alice: 1. Verifies Ed25519 signature on Bob's SignedPreKey.<br/>2. Computes X3DH (DH1||DH2||DH3||DH4) -> HKDF-SHA512 -> SK.<br/>3. Initializes DoubleRatchet v2 with AD = IK_A || IK_B.
-    Alice->>Directory: Relays X3DH header + "dr:<nonce>:<ciphertext>" + {v:2, dhPub, pn, n}
-    Note over Directory: Zero access to private keys or SK.<br/>Routes ciphertext; observes transport metadata only.
+    Bob->>Directory: Publishes IK_sign, IK_dh, SignedPreKey + Sig, OneTimePreKeys
+    Alice->>Directory: Fetches Bob PreKeyBundle
+    Note over Alice: 1. Verifies Ed25519 signature on Bob SignedPreKey.<br/>2. Computes X3DH (DH1..DH4) via HKDF-SHA512 into SK.<br/>3. Initializes DoubleRatchet v2 with AD = IK_A + IK_B.
+    Alice->>Directory: Relays X3DH header and dr ciphertext envelope (v2, dhPub, pn, n)
+    Note over Directory: Zero access to private keys or SK.<br/>Routes ciphertext and observes transport metadata only.
     Directory->>Bob: Delivers ciphertext envelope
-    Note over Bob: 1. Computes X3DH Responder SK & deletes consumed OPK.<br/>2. Verifies Header-Bound Poly1305 MAC.<br/>3. Commits Double Ratchet state & rotates ephemeral X25519 key on reply.
+    Note over Bob: 1. Computes X3DH Responder SK and deletes consumed OPK.<br/>2. Verifies Header-Bound Poly1305 MAC.<br/>3. Commits Double Ratchet state and rotates X25519 key on reply.
 ```
 
 ---
