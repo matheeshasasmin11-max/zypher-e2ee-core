@@ -1,0 +1,25 @@
+{
+  "name": "@zypherchats/e2ee-core",
+  "version": "1.0.0",
+  "description": "Open-source End-to-End Encryption (Double Ratchet + Curve25519 + XSalsa20-Poly1305) cryptographic engine for ZypherChats.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matheeshasasmin11-max/zypher-e2ee-core.git"
+  },
+  "scripts": {
+    "test": "node tests/verify-e2ee.mjs"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": ">=1.18.0",
+    "expo-crypto": ">=13.0.0",
+    "expo-secure-store": ">=13.0.0",
+    "react-native": ">=0.72.0"
+  }
+}
